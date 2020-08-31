@@ -747,8 +747,14 @@ endif
 ifdef CONFIG_LTO_CLANG
 ifdef CONFIG_THINLTO
 lto-clang-flags := -flto=thin
+
+ifeq ($(ld-name),lld)
+KBUILD_LDFLAGS		+= --thinlto-cache-dir=.thinlto-cache
 else
-lto-clang-flags := -flto
+KBUILD_LDFLAGS		+= --plugin-opt=cache-dir=.thinlto-cache
+endif
+else
+lto-clang-flags	:= -flto
 endif
 lto-clang-flags += -fvisibility=default $(call cc-option, -fsplit-lto-unit)
 
