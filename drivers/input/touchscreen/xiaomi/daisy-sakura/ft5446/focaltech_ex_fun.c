@@ -2,8 +2,8 @@
  *
  * FocalTech TouchScreen driver.
  *
- * Copyright (c) 2010-2017, Focaltech Ltd. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
+ * Copyright (c) 2012-2018, Focaltech Ltd. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,24 +36,23 @@
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
 
-
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
 /*create apk debug channel*/
-#define PROC_UPGRADE							0
-#define PROC_READ_REGISTER					  1
-#define PROC_WRITE_REGISTER					 2
-#define PROC_AUTOCLB							4
-#define PROC_UPGRADE_INFO					   5
-#define PROC_WRITE_DATA						 6
-#define PROC_READ_DATA						  7
-#define PROC_SET_TEST_FLAG					  8
-#define PROC_SET_SLAVE_ADDR					 10
-#define PROC_HW_RESET						   11
-#define PROC_NAME							   "ftxxxx-debug"
-#define PROC_WRITE_BUF_SIZE					 512
-#define PROC_READ_BUF_SIZE					  512
+#define PROC_UPGRADE                            0
+#define PROC_READ_REGISTER                      1
+#define PROC_WRITE_REGISTER                     2
+#define PROC_AUTOCLB                            4
+#define PROC_UPGRADE_INFO                       5
+#define PROC_WRITE_DATA                         6
+#define PROC_READ_DATA                          7
+#define PROC_SET_TEST_FLAG                      8
+#define PROC_SET_SLAVE_ADDR                     10
+#define PROC_HW_RESET                           11
+#define PROC_NAME                               "ftxxxx-debug"
+#define PROC_WRITE_BUF_SIZE                     256
+#define PROC_READ_BUF_SIZE                      256
 
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
@@ -67,12 +66,12 @@ enum {
 	RWREG_OP_WRITE = 1,
 };
 static struct rwreg_operation_t {
-	int type;		 /* 0: read, 1: write*/
-	int reg;		/* register*/
-	int len;		/* read/write length*/
-	int val;	  /* length = 1; read: return value, write: op return*/
-	int res;	 /* 0: success, otherwise: fail*/
-	char *opbuf;		/* length >= 1, read return value, write: op return*/
+	int type;         /*  0: read, 1: write */
+	int reg;        /*  register */
+	int len;        /*  read/write length */
+	int val;      /*  length = 1; read: return value, write: op return */
+	int res;     /*  0: success, otherwise: fail */
+	char *opbuf;        /*  length >= 1, read return value, write: op return */
 } rw_op;
 
 /*****************************************************************************
@@ -147,10 +146,10 @@ static ssize_t fts_debug_write(struct file *filp, const char __user *buff, size_
 		break;
 
 	case PROC_HW_RESET:
-		sprintf(tmp, "%s", writebuf + 1);
+		snprintf(tmp, PAGE_SIZE, "%s", writebuf + 1);
 		tmp[buflen - 1] = '\0';
 		if (strncmp(tmp, "focal_driver", 12) == 0) {
-		FTS_INFO("APK execute HW Reset");
+			FTS_INFO("APK execute HW Reset");
 			fts_reset_proc(1);
 		}
 		break;
@@ -319,7 +318,7 @@ static int fts_debug_write(struct file *filp,
 		break;
 
 	case PROC_HW_RESET:
-		sprintf(tmp, "%s", writebuf + 1);
+		snprintf(tmp, PAGE_SIZE, "%s", writebuf + 1);
 		tmp[buflen - 1] = '\0';
 		if (strncmp(tmp, "focal_driver", 12) == 0) {
 			FTS_INFO("Begin HW Reset");
@@ -356,7 +355,8 @@ static int fts_debug_write(struct file *filp,
 * Output: page point to data
 * Return: read char number
 ***********************************************************************/
-static int fts_debug_read(char *page, char **start, off_t off, int count, int *eof, void *data)
+static int fts_debug_read(char *page, char **start,
+						   off_t off, int count, int *eof, void *data)
 {
 	int ret = 0;
 	u8 buf[PROC_READ_BUF_SIZE] = { 0 };
@@ -424,7 +424,7 @@ static int fts_debug_read(char *page, char **start, off_t off, int count, int *e
 int fts_create_apk_debug_channel(struct fts_ts_data *ts_data)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	ts_data->proc = proc_create(PROC_NAME, 0777, NULL, &fts_proc_fops);
+	ts_data->proc = proc_create(PROC_NAME, 0664, NULL, &fts_proc_fops);
 #else
 	ts_data->proc = create_proc_entry(PROC_NAME, 0777, NULL);
 #endif
@@ -820,7 +820,7 @@ static ssize_t fts_fwupgradebin_store(struct device *dev, struct device_attribut
 		return -EINVAL;
 	}
 	memset(fwname, 0, sizeof(fwname));
-    sprintf(fwname, "%s", buf);
+	snprintf(fwname, PAGE_SIZE, "%s", buf);
 	fwname[count - 1] = '\0';
 
 	FTS_INFO("upgrade with bin file through sysfs node");
@@ -863,7 +863,7 @@ static ssize_t fts_fwforceupg_store(struct device *dev, struct device_attribute 
 		return -EINVAL;
 	}
 	memset(fwname, 0, sizeof(fwname));
-    sprintf(fwname, "%s", buf);
+	snprintf(fwname, PAGE_SIZE, "%s", buf);
 	fwname[count - 1] = '\0';
 
 	FTS_INFO("force upgrade through sysfs node");
@@ -887,21 +887,34 @@ static ssize_t fts_fwforceupg_store(struct device *dev, struct device_attribute 
 }
 
 /*
- * fts_driver_version interface
+ * fts_driver_info interface
  */
-static ssize_t fts_driverversion_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t fts_driverinfo_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	int count;
-	struct input_dev *input_dev = fts_data->input_dev;
+	int count = 0;
+	struct fts_ts_data *ts_data = fts_data;
+	struct fts_ts_platform_data *pdata = ts_data->pdata;
+	struct input_dev *input_dev = ts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
-	count = sprintf(buf, FTS_DRIVER_VERSION "\n");
+	count += snprintf(buf + count, PAGE_SIZE, "Driver Ver:%s\n", FTS_DRIVER_VERSION);
+
+	count += snprintf(buf + count, PAGE_SIZE, "Resolution:(%d,%d)~(%d,%d)\n",
+					  pdata->x_min, pdata->y_min, pdata->x_max, pdata->y_max);
+
+	count += snprintf(buf + count, PAGE_SIZE, "Max Touchs:%d\n", pdata->max_touch_number);
+
+	count += snprintf(buf + count, PAGE_SIZE, "reset gpio:%d,int gpio:%d,irq:%d\n",
+					  pdata->reset_gpio, pdata->irq_gpio, ts_data->irq);
+
+	count += snprintf(buf + count, PAGE_SIZE, "IC ID:0x%02x%02x\n",
+					  ts_data->ic_info.ids.chip_idh, ts_data->ic_info.ids.chip_idl);
 	mutex_unlock(&input_dev->mutex);
 
 	return count;
 }
 
-static ssize_t fts_driverversion_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t fts_driverinfo_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	return -EPERM;
 }
@@ -971,21 +984,21 @@ static DEVICE_ATTR(fts_fw_version, S_IRUGO | S_IWUSR, fts_tpfwver_show, fts_tpfw
 /* read and write register(s)
 *   All data type is **HEX**
 *   Single Byte:
-*	   read:   echo 88 > rw_reg ---read register 0x88
-*	   write:  echo 8807 > rw_reg ---write 0x07 into register 0x88
+*       read:   echo 88 > rw_reg ---read register 0x88
+*       write:  echo 8807 > rw_reg ---write 0x07 into register 0x88
 *   Multi-bytes:
-*	   [0:rw-flag][1-2: reg addr, hex][3-4: length, hex][5-6...n-n+1: write data, hex]
-*	   rw-flag: 0, write; 1, read
-*	   read:  echo 10005		   > rw_reg ---read reg 0x00-0x05
-*	   write: echo 000050102030405 > rw_reg ---write reg 0x00-0x05 as 01,02,03,04,05
+*       [0:rw-flag][1-2: reg addr, hex][3-4: length, hex][5-6...n-n+1: write data, hex]
+*       rw-flag: 0, write; 1, read
+*       read:  echo 10005           > rw_reg ---read reg 0x00-0x05
+*       write: echo 000050102030405 > rw_reg ---write reg 0x00-0x05 as 01,02,03,04,05
 *  Get result:
-*	   cat rw_reg
+*       cat rw_reg
 */
 static DEVICE_ATTR(fts_rw_reg, S_IRUGO | S_IWUSR, fts_tprwreg_show, fts_tprwreg_store);
 /*  upgrade from fw bin file   example:echo "*.bin" > fts_upgrade_bin */
 static DEVICE_ATTR(fts_upgrade_bin, S_IRUGO | S_IWUSR, fts_fwupgradebin_show, fts_fwupgradebin_store);
 static DEVICE_ATTR(fts_force_upgrade, S_IRUGO | S_IWUSR, fts_fwforceupg_show, fts_fwforceupg_store);
-static DEVICE_ATTR(fts_driver_version, S_IRUGO | S_IWUSR, fts_driverversion_show, fts_driverversion_store);
+static DEVICE_ATTR(fts_driver_info, S_IRUGO | S_IWUSR, fts_driverinfo_show, fts_driverinfo_store);
 static DEVICE_ATTR(fts_dump_reg, S_IRUGO | S_IWUSR, fts_dumpreg_show, fts_dumpreg_store);
 static DEVICE_ATTR(fts_hw_reset, S_IRUGO | S_IWUSR, fts_hw_reset_show, fts_hw_reset_store);
 static DEVICE_ATTR(fts_irq, S_IRUGO | S_IWUSR, fts_irq_show, fts_irq_store);
@@ -997,7 +1010,7 @@ static struct attribute *fts_attributes[] = {
 	&dev_attr_fts_dump_reg.attr,
 	&dev_attr_fts_upgrade_bin.attr,
 	&dev_attr_fts_force_upgrade.attr,
-	&dev_attr_fts_driver_version.attr,
+	&dev_attr_fts_driver_info.attr,
 	&dev_attr_fts_hw_reset.attr,
 	&dev_attr_fts_irq.attr,
 	NULL
@@ -1041,128 +1054,3 @@ int fts_remove_sysfs(struct i2c_client *client)
 	sysfs_remove_group(&client->dev.kobj, &fts_attribute_group);
 	return 0;
 }
-
-
-/**
- * ============================
- * @Author:   HQ-zmc
- * @Version:  1.0
- * @DateTime: 2018-01-03 15:28:04
- * @input:
- * @output:
- * ============================
- */
-#if HQ_LOCK_DOWN_INFO
-char ftp_lockdown_info[40] = {0};
-#define FTS_PROC_LOCKDOWN_FILE "tp_lockdown_info"
-static struct proc_dir_entry *fts_lockdown_status_proc;
-
-static int fts_lockdown_proc_show(struct seq_file *file, void *data)
-{
-	/* char temp[40] = {0};*/
-	/* snprintf(temp, "%s\n", ftp_lockdown_info);*/
-	seq_printf(file, "%s\n", ftp_lockdown_info);
-	return 0;
-}
-
-static int fts_lockdown_proc_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, fts_lockdown_proc_show, inode->i_private);
-}
-
-static const struct file_operations fts_lockdown_proc_fops = {
-	.open = fts_lockdown_proc_open,
-	.read = seq_read,
-};
-
-extern int *get_lcd_vendor(void);
-int fts_create_lockdown_proc(struct i2c_client *client)
-{
-	u8 cmd[4] = {0};
-	u8 val[10] = {0};
-	unsigned char i = 0, j = 0;
-	int *lcd_vendor = get_lcd_vendor();
-	int ret = 0;
-
-	fts_i2c_hid2std(client);
-	for (i = 0; i < 30; i++) {
-		msleep(100);
-		/*********Step 1:Reset  CTPM *****/
-		ret = fts_fwupg_reset_to_boot(client);
-		if (ret < 0) {
-			FTS_ERROR("enter into romboot/bootloader fail");
-			return ret;
-		}
-
-		fts_i2c_hid2std(client);
-		/*********Step 2:Enter upgrade mode *****/
-		cmd[0] = FTS_UPGRADE_55;
-		cmd[1] = FTS_UPGRADE_AA;
-		ret = fts_i2c_write(client, cmd, 2);
-		if (ret < 0) {
-			FTS_ERROR("write 55 aa cmd fail");
-			return ret;
-		}
-
-		/*********Step 3:check READ-ID***********************/
-		cmd[0] = FTS_CMD_READ_ID;
-		cmd[1] = cmd[2] = cmd[3] = 0x00;
-		ret = fts_i2c_read(client, cmd, 4, val, 2);
-		if (ret < 0) {
-			FTS_ERROR("write 90 00 00 00 cmd fail");
-			return ret;
-		}
-		FTS_INFO("read boot id:0x%02x%02x", val[0], val[1]);
-		if (val[0] == 0x54 && val[1] == 0x2c) {
-			break;
-		} else{
-			continue;
-		}
-	}
-
-	if (i >= 30) {
-		FTS_ERROR("read boot id is invald!\n");
-		return -EIO;
-	}
-
-	FTS_INFO("%s,read boot id ok is i = %d \n", __func__, i);
-	/********* Step 4: read project code from app param area ***********************/
-	usleep_range(10000,11000);
-	cmd[0] = 0x03;
-	cmd[1] = 0x00;
-	for (i = 0; i < 30; i++) {
-		cmd[2] = 0xd7;
-		cmd[3] = 0xa0;
-		ret = fts_i2c_write(client, cmd, 4);
-		if (ret < 0) {
-			FTS_ERROR("write cmd fail");
-			continue;
-		}
-		usleep_range(10000,11000);
-		ret = fts_i2c_read(client, cmd, 0, val, 8);
-		if (ret < 0) {
-			FTS_ERROR("read lcm id fail!");
-			continue;
-		}
-		for (j = 0; j < 8; j++) {
-			FTS_INFO("REG VAL = 0x%02x,j=%d\n", val[j], j);
-		}
-		sprintf(ftp_lockdown_info, "%02x%02x%02x%02x%02x%02x%02x%02x", \
-				val[0], val[1], val[2], val[3], val[4], val[5], val[6], val[7]);
-		FTS_INFO("FT5446 tp_lockdown_info = %s\n", ftp_lockdown_info);
-		*lcd_vendor = val[1];
-		break;
-	}
-
-	FTS_INFO("reset the tp!\n");
-	cmd[0] = 0x07;
-	fts_i2c_write(client, cmd, 1);
-	msleep(300);
-
-	fts_lockdown_status_proc = proc_create(FTS_PROC_LOCKDOWN_FILE, 0644, NULL, &fts_lockdown_proc_fops);
-	if (fts_lockdown_status_proc == NULL) {
-		printk("fts, create_proc_entry ctp_lockdown_status_proc failed\n");
-	}
-	return 0;
-}
-#endif

@@ -2,7 +2,8 @@
  *
  * FocalTech TouchScreen driver.
  *
- * Copyright (c) 2010-2017, FocalTech Systems, Ltd., all rights reserved.
+ * Copyright (c) 2012-2018, FocalTech Systems, Ltd., all rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,17 +20,16 @@
 *
 * File Name: focaltech_i2c.c
 *
-*	Author: fupeipei
+* Author: Focaltech Driver Team
 *
-*   Created: 2016-08-04
+* Created: 2016-08-04
 *
-*  Abstract: i2c communication with TP
+* Abstract: i2c communication with TP
 *
-*   Version: v1.0
+* Version: v1.0
 *
 * Revision History:
-*		v1.0:
-*			First release. By fupeipei 2016-08-04
+*
 ************************************************************************/
 
 /*****************************************************************************
@@ -40,7 +40,7 @@
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
-#define I2C_RETRY_NUMBER		3
+#define I2C_RETRY_NUMBER        3
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/

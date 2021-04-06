@@ -2,8 +2,8 @@
  *
  * FocalTech TouchScreen driver.
  *
- * Copyright (c) 2010-2017, FocalTech Systems, Ltd., all rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
+ * Copyright (c) 2012-2018, FocalTech Systems, Ltd., all rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,7 +20,7 @@
 *
 * File Name: focaltech_esdcheck.c
 *
-*	Author: Focaltech Driver Team
+*    Author: Focaltech Driver Team
 *
 *   Created: 2016-08-03
 *
@@ -29,10 +29,10 @@
 *   Version: v1.0
 *
 * Revision History:
-*		v1.0:
-*			First release. By luougojin 2016-08-03
-*		v1.1: By luougojin 2017-02-15
-*			1. Add LCD_ESD_PATCH to control idc_esdcheck_lcderror
+*        v1.0:
+*            First release. By luougojin 2016-08-03
+*        v1.1: By luougojin 2017-02-15
+*            1. Add LCD_ESD_PATCH to control idc_esdcheck_lcderror
 *****************************************************************************/
 
 /*****************************************************************************
@@ -44,23 +44,23 @@
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
-#define ESDCHECK_WAIT_TIME			  1000	/*ms*/
-#define LCD_ESD_PATCH				   0
+#define ESDCHECK_WAIT_TIME              1000    /* ms */
+#define LCD_ESD_PATCH                   0
 
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/
 struct fts_esdcheck_st {
-	u8	  mode				: 1;	/* 1- need check esd 0- no esd check */
-	u8	  suspend			 : 1;
-	u8	  proc_debug		  : 1;	/* apk or adb is accessing I2C */
-	u8	  intr				: 1;	/* 1- Interrupt trigger */
-	u8	  unused			  : 4;
-	u8	  flow_work_hold_cnt;		 /* Flow Work Cnt(reg0x91) keep a same value for x times. >=5 times is ESD, need reset */
-	u8	  flow_work_cnt_last;		 /* Save Flow Work Cnt(reg0x91) value */
-	u32	 hardware_reset_cnt;
-	u32	 i2c_nack_cnt;
-	u32	 i2c_dataerror_cnt;
+	u8      mode                : 1;    /* 1- need check esd 0- no esd check */
+	u8      suspend             : 1;
+	u8      proc_debug          : 1;    /* apk or adb is accessing I2C */
+	u8      intr                : 1;    /* 1- Interrupt trigger */
+	u8      unused              : 4;
+	u8      flow_work_hold_cnt;         /* Flow Work Cnt(reg0x91) keep a same value for x times. >=5 times is ESD, need reset */
+	u8      flow_work_cnt_last;         /* Save Flow Work Cnt(reg0x91) value */
+	u32     hardware_reset_cnt;
+	u32     i2c_nack_cnt;
+	u32     i2c_dataerror_cnt;
 };
 
 /*****************************************************************************
@@ -150,7 +150,7 @@ static int fts_esdcheck_tp_reset(struct fts_ts_data *ts_data)
 *  Input:
 *  Output:
 *  Return:  1 - Read Chip Id 3 times failed
-*		   0 - Read Chip Id pass
+*           0 - Read Chip Id pass
 *****************************************************************************/
 static bool get_chip_id(struct fts_ts_data *ts_data)
 {
@@ -192,13 +192,13 @@ static bool get_chip_id(struct fts_ts_data *ts_data)
 *  Input:
 *  Output:
 *  Return:  1 - Reg 0x91(flow cnt) abnormal: hold a value for 5 times
-*		   0 - Reg 0x91(flow cnt) normal
+*           0 - Reg 0x91(flow cnt) normal
 *****************************************************************************/
 static bool get_flow_cnt(struct fts_ts_data *ts_data)
 {
-	int	 ret = 0;
-	u8	  reg_value = 0;
-	u8	  reg_addr = 0;
+	int     ret = 0;
+	u8      reg_value = 0;
+	u8      reg_addr = 0;
 	struct i2c_client *client = ts_data->client;
 
 	reg_addr = FTS_REG_FLOW_WORK_CNT;
@@ -234,15 +234,15 @@ static bool get_flow_cnt(struct fts_ts_data *ts_data)
 *****************************************************************************/
 static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 {
-	int	 ret = 0;
-	u8	  reg_value = 0;
-	u8	  reg_addr = 0;
-	bool	hardware_reset = 0;
+	int     ret = 0;
+	u8      reg_value = 0;
+	u8      reg_addr = 0;
+	bool    hardware_reset = 0;
 	struct i2c_client *client = ts_data->client;
 
 	/* 1. esdcheck is interrupt, then return */
 	if (fts_esdcheck_data.intr == 1) {
-		FTS_DEBUG("[ESD]: In interrupt state, not check esd, return immediately!!");
+		FTS_DEBUG("[ESD]: In interrupt state, not check esd, return immediately!!"); 
 		return 0;
 	}
 
@@ -352,7 +352,7 @@ int fts_esdcheck_get_status(void)
 /*****************************************************************************
 *  Name: fts_esdcheck_proc_busy
 *  Brief: When APK or ADB command access TP via driver, then need set proc_debug,
-*		 then will not check ESD.
+*         then will not check ESD.
 *  Input:
 *  Output:
 *  Return:
@@ -367,7 +367,7 @@ int fts_esdcheck_proc_busy(bool proc_debug)
 *  Name: fts_esdcheck_switch
 *  Brief: FTS esd check function switch.
 *  Input:   enable:  1 - Enable esd check
-*					0 - Disable esd check
+*                    0 - Disable esd check
 *  Output:
 *  Return:
 *****************************************************************************/
@@ -466,14 +466,14 @@ static ssize_t fts_esdcheck_show(struct device *dev, struct device_attribute *at
 	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
-    count = sprintf(buf, "Esd check: %s\n", fts_esdcheck_get_status() ? "On" : "Off");
+	count = snprintf(buf, PAGE_SIZE, "Esd check: %s\n", fts_esdcheck_get_status() ? "On" : "Off");
 	mutex_unlock(&input_dev->mutex);
 
 	return count;
 }
 
 /* sysfs esd node
- *   read example: cat  fts_esd_mode		---read esd mode
+ *   read example: cat  fts_esd_mode        ---read esd mode
  *   write example:echo 01 > fts_esd_mode   ---make esdcheck enable
  *
  */
@@ -501,7 +501,7 @@ int fts_create_esd_sysfs(struct i2c_client *client)
 
 	ret = sysfs_create_group(&client->dev.kobj, &fts_esd_group);
 	if (ret != 0) {
-		FTS_ERROR("[GESTURE]fts_gesture_mode_group(sysfs) create failed!");
+		FTS_ERROR("fts_create_esd_sysfs(sysfs) create failed!");
 		sysfs_remove_group(&client->dev.kobj, &fts_esd_group);
 		return ret;
 	}

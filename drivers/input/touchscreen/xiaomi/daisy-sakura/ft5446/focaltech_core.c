@@ -2,8 +2,8 @@
  *
  * FocalTech TouchScreen driver.
  *
- * Copyright (c) 2010-2017, FocalTech Systems, Ltd., all rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
+ * Copyright (c) 2012-2018, FocalTech Systems, Ltd., all rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -33,35 +33,35 @@
 * Included header files
 *****************************************************************************/
 #include "focaltech_core.h"
-#include "focaltech_flash.h"
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>
 #include <linux/fb.h>
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
-#define FTS_SUSPEND_LEVEL 1	 /* Early-suspend level */
+#define FTS_SUSPEND_LEVEL 1     /* Early-suspend level */
 #endif
-/*Add by HQ-zmc [Date: 2018-01-24 09:12:34]*/
-#include "./focaltech_test/focaltech_test.h"
 
+/*Add by HQ-102007757 for sending tp hw info*/
+#include "focaltech_flash.h"
+#include <linux/hqsysfs.h>
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
-#define FTS_DRIVER_NAME					 "fts_ts"
-#define INTERVAL_READ_REG				   100  /*unit:ms*/
-#define TIMEOUT_READ_REG					200 /*unit:ms*/
+#define FTS_DRIVER_NAME                     "fts_ts"
+#define INTERVAL_READ_REG                   100  /* unit:ms */
+#define TIMEOUT_READ_REG                    1000 /* unit:ms */
 #if FTS_POWER_SOURCE_CUST_EN
-#define FTS_VTG_MIN_UV					  2600000
-#define FTS_VTG_MAX_UV					  3300000
-#define FTS_I2C_VTG_MIN_UV				  1800000
-#define FTS_I2C_VTG_MAX_UV				  1800000
+#define FTS_VTG_MIN_UV                      2600000
+#define FTS_VTG_MAX_UV                      3300000
+#define FTS_I2C_VTG_MIN_UV                  1800000
+#define FTS_I2C_VTG_MAX_UV                  1800000
 #endif
 
+#define FTS_RESUME_EN                    1
 /*****************************************************************************
 * Global variable or extern global variabls/functions
 *****************************************************************************/
 struct fts_ts_data *fts_data;
-
 /*****************************************************************************
 * Static function prototypes
 *****************************************************************************/
@@ -69,29 +69,72 @@ static void fts_release_all_finger(void);
 static int fts_ts_suspend(struct device *dev);
 static int fts_ts_resume(struct device *dev);
 
-/*Add by HQ-zmc [Date: 2018-02-12 14:44:52]*/
-static int D1S_LCD_VENDOR;
+/************************************************************************
+* Name: create reusme workqueue
+* Brief: put resume period into workqueue
+* Date: Add by HQ-102007757 [Date: 2019-3-22]
+***********************************************************************/
+#if FTS_RESUME_EN
 
-#if ((defined CONFIG_PM) && (defined CONFIG_ENABLE_PM_TP_SUSPEND_RESUME))
-extern bool lcm_ffbm_mode;
+#define FTS_RESUME_WAIT_TIME             20
+
+static struct delayed_work fts_resume_work;
+static struct workqueue_struct *fts_resume_workqueue;
+
+static void fts_resume_func(struct work_struct *work)
+{
+	struct fts_ts_data *data = fts_data;
+	FTS_DEBUG("Enter %s", __func__);
+
+	fts_ts_resume(&data->client->dev);
+
+
+}
+
+void fts_resume_queue_work(void)
+{
+	cancel_delayed_work(&fts_resume_work);
+	queue_delayed_work(fts_resume_workqueue, &fts_resume_work, msecs_to_jiffies(FTS_RESUME_WAIT_TIME));
+}
+
+int fts_resume_init(void)
+{
+	INIT_DELAYED_WORK(&fts_resume_work, fts_resume_func);
+	fts_resume_workqueue = create_workqueue("fts_resume_wq");
+	if (fts_resume_workqueue == NULL) {
+		FTS_ERROR("Failed to create fts_resume_workqueue!!!");
+	} else {
+		FTS_DEBUG("Success to create fts_resume_workqueue!!!");
+	}
+
+	return 0;
+}
+
+int fts_resume_exit(void)
+{
+	destroy_workqueue(fts_resume_workqueue);
+
+	return 0;
+}
 #endif
+
+/*Add by HQ-102007757 [Date: 2018-12-26]*/
+static int C3H_LCD_VENDOR;
 
 /************************************************************************
 * Name: get_lcd_vendor
 * Brief: get lcd vendor from lockdown val[1]
-* Input:
-* Output:
-* Date: Add by HQ-zmc [Date: 2018-02-12 14:45:42]
+* Date: Add by HQ-102007757 [Date: 2018-12-26]
 ***********************************************************************/
 int *get_lcd_vendor(void)
 {
-	return &D1S_LCD_VENDOR;
+	return &C3H_LCD_VENDOR;
 }
 
 /*****************************************************************************
 *  Name: fts_wait_tp_to_valid
 *  Brief: Read chip id until TP FW become valid(Timeout: TIMEOUT_READ_REG),
-*		 need call when reset/power on/resume...
+*         need call when reset/power on/resume...
 *  Input:
 *  Output:
 *  Return: return 0 if tp valid, otherwise return error code
@@ -106,10 +149,10 @@ int fts_wait_tp_to_valid(struct i2c_client *client)
 	do {
 		ret = fts_i2c_read_reg(client, FTS_REG_CHIP_ID, &reg_value);
 		if ((ret < 0) || (reg_value != chip_id)) {
-		FTS_DEBUG("TP Not Ready, ReadData = 0x%x", reg_value);
+			FTS_DEBUG("TP Not Ready, ReadData = 0x%x", reg_value);
 		} else if (reg_value == chip_id) {
-		FTS_INFO("TP Ready, Device ID = 0x%x", reg_value);
-		return 0;
+			FTS_INFO("TP Ready, Device ID = 0x%x", reg_value);
+			return 0;
 		}
 		cnt++;
 		msleep(INTERVAL_READ_REG);
@@ -140,9 +183,9 @@ static int fts_get_chip_types(
 
 	FTS_DEBUG("verify id:0x%02x%02x", id_h, id_l);
 	for (i = 0; i < ctype_entries; i++) {
-	if (VALID == fw_valid) {
-		if ((id_h == ctype[i].chip_idh) && (id_l == ctype[i].chip_idl))
-		break;
+		if (VALID == fw_valid) {
+			if ((id_h == ctype[i].chip_idh) && (id_l == ctype[i].chip_idl))
+				break;
 		} else {
 			if (((id_h == ctype[i].rom_idh) && (id_l == ctype[i].rom_idl))
 				|| ((id_h == ctype[i].pb_idh) && (id_l == ctype[i].pb_idl))
@@ -170,15 +213,19 @@ int fts_get_ic_information(struct fts_ts_data *ts_data)
 {
 	int ret = 0;
 	int cnt = 0;
+
 	u8 chip_id[2] = { 0 };
 	u8 id_cmd[4] = { 0 };
+	u32 id_cmd_len = 0;
 	struct i2c_client *client = ts_data->client;
 
+	ts_data->ic_info.is_incell = FTS_CHIP_IDC;
+	ts_data->ic_info.hid_supported = FTS_HID_SUPPORTTED;
 	do {
 		ret = fts_i2c_read_reg(client, FTS_REG_CHIP_ID, &chip_id[0]);
 		ret = fts_i2c_read_reg(client, FTS_REG_CHIP_ID2, &chip_id[1]);
 		if ((ret < 0) || (0x0 == chip_id[0]) || (0x0 == chip_id[1])) {
-			FTS_DEBUG("i2c read error, read:0x%02x%02x", chip_id[0], chip_id[1]);
+			FTS_DEBUG("i2c read invalid, read:0x%02x%02x", chip_id[0], chip_id[1]);
 		} else {
 			ret = fts_get_chip_types(ts_data, chip_id[0], chip_id[1], VALID);
 			if (!ret)
@@ -193,9 +240,10 @@ int fts_get_ic_information(struct fts_ts_data *ts_data)
 
 	if ((cnt * INTERVAL_READ_REG) >= TIMEOUT_READ_REG) {
 		FTS_INFO("fw is invalid, need read boot id");
-#if FTS_HID_SUPPORTTED
-		fts_i2c_hid2std(client);
-#endif
+		if (ts_data->ic_info.hid_supported) {
+			fts_i2c_hid2std(client);
+		}
+
 		id_cmd[0] = FTS_CMD_START1;
 		id_cmd[1] = FTS_CMD_START2;
 		ret = fts_i2c_write(client, id_cmd, 2);
@@ -203,9 +251,15 @@ int fts_get_ic_information(struct fts_ts_data *ts_data)
 			FTS_ERROR("start cmd write fail");
 			return ret;
 		}
+
+		msleep(FTS_CMD_START_DELAY);
 		id_cmd[0] = FTS_CMD_READ_ID;
 		id_cmd[1] = id_cmd[2] = id_cmd[3] = 0x00;
-		ret = fts_i2c_read(client, id_cmd, 4, chip_id, 2);
+		if (ts_data->ic_info.is_incell)
+			id_cmd_len = FTS_CMD_READ_ID_LEN_INCELL;
+		else
+			id_cmd_len = FTS_CMD_READ_ID_LEN;
+		ret = fts_i2c_read(client, id_cmd, id_cmd_len, chip_id, 2);
 		if ((ret < 0) || (0x0 == chip_id[0]) || (0x0 == chip_id[1])) {
 			FTS_ERROR("read boot id fail");
 			return -EIO;
@@ -217,8 +271,6 @@ int fts_get_ic_information(struct fts_ts_data *ts_data)
 		}
 	}
 
-	ts_data->ic_info.is_incell = FTS_CHIP_IDC;
-	ts_data->ic_info.hid_supported = FTS_HID_SUPPORTTED;
 	FTS_INFO("get ic information, chip id = 0x%02x%02x",
 			 ts_data->ic_info.ids.chip_idh, ts_data->ic_info.ids.chip_idl);
 
@@ -234,6 +286,7 @@ int fts_get_ic_information(struct fts_ts_data *ts_data)
 *****************************************************************************/
 void fts_tp_state_recovery(struct i2c_client *client)
 {
+	FTS_FUNC_ENTER();
 	/* wait tp stable */
 	fts_wait_tp_to_valid(client);
 	/* recover TP charger state 0x8B */
@@ -244,6 +297,7 @@ void fts_tp_state_recovery(struct i2c_client *client)
 #if FTS_GESTURE_EN
 	fts_gesture_recovery(client);
 #endif
+	FTS_FUNC_EXIT();
 }
 
 /*****************************************************************************
@@ -323,6 +377,9 @@ static int fts_power_source_init(struct fts_ts_data *data)
 
 	FTS_FUNC_ENTER();
 
+	gpio_direction_output(fts_data->pdata->reset_gpio, 0);
+	msleep(8);
+
 	data->vdd = regulator_get(&data->client->dev, "vdd");
 	if (IS_ERR(data->vdd)) {
 		ret = PTR_ERR(data->vdd);
@@ -387,23 +444,31 @@ static int fts_power_source_ctrl(struct fts_ts_data *data, int enable)
 
 	FTS_FUNC_ENTER();
 	if (enable) {
-		ret = regulator_enable(data->vdd);
-		if (ret) {
-			FTS_ERROR("enable vdd regulator failed,ret=%d", ret);
-		}
+		if (data->power_disabled) {
+			FTS_DEBUG("regulator enable !");
+			ret = regulator_enable(data->vdd);
+			if (ret) {
+				FTS_ERROR("enable vdd regulator failed,ret=%d", ret);
+			}
 
-		ret = regulator_enable(data->vcc_i2c);
-		if (ret) {
-			FTS_ERROR("enable vcc_i2c regulator failed,ret=%d", ret);
+			ret = regulator_enable(data->vcc_i2c);
+			if (ret) {
+				FTS_ERROR("enable vcc_i2c regulator failed,ret=%d", ret);
+			}
+			data->power_disabled = false;
 		}
 	} else {
-		ret = regulator_disable(data->vdd);
-		if (ret) {
-			FTS_ERROR("disable vdd regulator failed,ret=%d", ret);
-		}
-		ret = regulator_disable(data->vcc_i2c);
-		if (ret) {
-			FTS_ERROR("disable vcc_i2c regulator failed,ret=%d", ret);
+		if (!data->power_disabled) {
+			FTS_DEBUG("regulator disable !");
+			ret = regulator_disable(data->vdd);
+			if (ret) {
+				FTS_ERROR("disable vdd regulator failed,ret=%d", ret);
+			}
+			ret = regulator_disable(data->vcc_i2c);
+			if (ret) {
+				FTS_ERROR("disable vcc_i2c regulator failed,ret=%d", ret);
+			}
+			data->power_disabled = true;
 		}
 	}
 
@@ -478,19 +543,19 @@ static int fts_pinctrl_select_normal(struct fts_ts_data *ts)
 	return ret;
 }
 
-/* static int fts_pinctrl_select_suspend(struct fts_ts_data *ts)
- {
-	 int ret = 0;
+static int fts_pinctrl_select_suspend(struct fts_ts_data *ts)
+{
+	int ret = 0;
 
-	 if (ts->pinctrl && ts->pins_suspend) {
-		 ret = pinctrl_select_state(ts->pinctrl, ts->pins_suspend);
-		 if (ret < 0) {
-			 FTS_ERROR("Set suspend pin state error:%d", ret);
-		 }
-	 }
+	if (ts->pinctrl && ts->pins_suspend) {
+		ret = pinctrl_select_state(ts->pinctrl, ts->pins_suspend);
+		if (ret < 0) {
+			FTS_ERROR("Set suspend pin state error:%d", ret);
+		}
+	}
 
-	 return ret;
- }*/
+	return ret;
+}
 
 static int fts_pinctrl_select_release(struct fts_ts_data *ts)
 {
@@ -530,9 +595,9 @@ static void fts_show_touch_buffer(u8 *buf, int point_num)
 	} else if (len == 0) {
 		len += FTS_ONE_TCH_LEN;
 	}
-    count += sprintf(g_sz_debug, "%02X,%02X,%02X", buf[0], buf[1], buf[2]);
+	count += snprintf(g_sz_debug, PAGE_SIZE, "%02X,%02X,%02X", buf[0], buf[1], buf[2]);
 	for (i = 0; i < len; i++) {
-	count += sprintf(g_sz_debug + count, ",%02X", buf[i + 3]);
+		count += snprintf(g_sz_debug + count, PAGE_SIZE, ",%02X", buf[i + 3]);
 	}
 	FTS_DEBUG("buffer: %s", g_sz_debug);
 }
@@ -549,7 +614,7 @@ static void fts_release_all_finger(void)
 {
 	struct input_dev *input_dev = fts_data->input_dev;
 #if FTS_MT_PROTOCOL_B_EN
-	unsigned int finger_count = 0;
+	u32 finger_count = 0;
 #endif
 
 	FTS_FUNC_ENTER();
@@ -607,9 +672,6 @@ static int fts_input_report_key(struct fts_ts_data *data, int index)
 	return -EINVAL;
 }
 
-/*Modifiy by HQ-zmc [Date: 2018-03-26 11:31:37]*/
-static bool p_down[10] = {0};
-
 #if FTS_MT_PROTOCOL_B_EN
 static int fts_input_report_b(struct fts_ts_data *data)
 {
@@ -652,19 +714,16 @@ static int fts_input_report_b(struct fts_ts_data *data)
 			touchs |= BIT(events[i].id);
 			data->touchs |= BIT(events[i].id);
 
-			/*Modifiy by HQ-zmc [Date: 2018-03-26 14:13:47]*/
-			if (!p_down[events[i].id]) {
+
+			if (events[i].flag == FTS_TOUCH_DOWN) {
 				FTS_DEBUG("[B]P%d(%d, %d)[p:%d,tm:%d] DOWN!", events[i].id, events[i].x,
-					  events[i].y, events[i].p, events[i].area);
-				p_down[events[i].id] = true;
+						events[i].y, events[i].p, events[i].area);
 			}
 		} else {
 			uppoint++;
 			input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, false);
 			data->touchs &= ~BIT(events[i].id);
-			/*Modifiy by HQ-zmc [Date: 2018-03-26 14:13:53]*/
-			FTS_DEBUG("[B]P%d(%d,%d) UP!", events[i].id, events[i].x, events[i].y);
-			p_down[events[i].id] = false;
+			FTS_DEBUG("[B]P%d UP!", events[i].id);
 		}
 	}
 
@@ -683,7 +742,7 @@ static int fts_input_report_b(struct fts_ts_data *data)
 	if (va_reported) {
 		/* touchs==0, there's no point but key */
 		if (EVENT_NO_DOWN(data) || (!touchs)) {
-			/* FTS_DEBUG("[B]Points All Up!");*/
+			FTS_DEBUG("[B]Points All Up!");
 			input_report_key(data->input_dev, BTN_TOUCH, 0);
 		} else {
 			input_report_key(data->input_dev, BTN_TOUCH, 1);
@@ -771,6 +830,7 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 	struct ts_event *events = data->events;
 	int max_touch_num = data->pdata->max_touch_number;
 	u8 *buf = data->point_buf;
+	struct i2c_client *client = data->client;
 
 #if FTS_GESTURE_EN
 	if (0 == fts_gesture_readdata(data)) {
@@ -795,6 +855,16 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		return ret;
 	}
 	data->point_num = buf[FTS_TOUCH_POINT_NUM] & 0x0F;
+
+	if (data->ic_info.is_incell) {
+		if ((data->point_num == 0x0F) && (buf[1] == 0xFF) && (buf[2] == 0xFF)
+			&& (buf[3] == 0xFF) && (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
+			FTS_INFO("touch buff is 0xff, need recovery state");
+			fts_tp_state_recovery(client);
+			return -EIO;
+		}
+	}
+
 	if (data->point_num > max_touch_num) {
 		FTS_INFO("invalid point_num(%d)", data->point_num);
 		return -EIO;
@@ -1213,14 +1283,22 @@ static int fb_notifier_callback(struct notifier_block *self,
 	struct fts_ts_data *fts_data =
 		container_of(self, struct fts_ts_data, fb_notif);
 
+	FTS_DEBUG("Enter %s", __func__);
+
 	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
 		fts_data && fts_data->client) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_UNBLANK)
+#if FTS_RESUME_EN
+			fts_resume_queue_work();
+#else
 			fts_ts_resume(&fts_data->client->dev);
+#endif
 		else if (*blank == FB_BLANK_POWERDOWN)
 			fts_ts_suspend(&fts_data->client->dev);
 	}
+
+	FTS_DEBUG("Exit %s", __func__);
 
 	return 0;
 }
@@ -1254,64 +1332,17 @@ static void fts_ts_late_resume(struct early_suspend *handler)
 											struct fts_ts_data,
 											early_suspend);
 
+	FTS_DEBUG("Enter %s", __func__);
+
+#if FTS_RESUME_EN
+	fts_resume_queue_work();
+#else
 	fts_ts_resume(&data->client->dev);
-}
 #endif
 
-/**
- * ============================
- * @Author:   HQ-zmc
- * @Version:  1.0
- * @DateTime: 2018-01-02 17:12:58
- * @input: ts_data
- * @output: ret
- * ============================
- */
-static char tp_info_summary[80] = "";
-extern struct upgrade_fw fw_list[];
-
-int ctp_hw_info(struct fts_ts_data *ts_data, struct i2c_client *client)
-{
-	int i;
-	bool fwvalid = false;
-	u8 fw_ver_in_tp = 0;
-	char tp_temp_info[80];
-	struct upgrade_fw *fw = &fw_list[0];
-	int ret = 0;
-	int *lcd_vendor = get_lcd_vendor();
-	/*Add by HQ-zmc [Date: 2018-02-12 14:49:25]
-	 *We don't compare vendor id here because only ofilm is adopted.
-	 *We will compare D1S_LCD_VENDOR because ofilm is matched with several LCD vendors
-	*/
-	for (i = 0; i < D1S_LCD_VENDOR_NUM; i++) {
-		fw = &fw_list[i];
-		if (*lcd_vendor == fw->vendor_id) {
-			FTS_INFO("lcd vendor id match: 0x%x \n", *lcd_vendor);
-			strcpy(tp_info_summary, fw->vendor_info);
-
-			fwvalid = fts_fwupg_check_fw_valid(client);
-			if (fwvalid) {
-				ret = fts_fwupg_get_ver_in_tp(client, &fw_ver_in_tp);
-				if (ret < 0) {
-					FTS_ERROR("get fw ver in tp fail");
-					return false;
-				}
-			}
-			sprintf(tp_temp_info, "%d", fw_ver_in_tp);
-			strcat(tp_info_summary, tp_temp_info);
-			strcat(tp_info_summary, "\0");
-			FTS_INFO("%s", tp_info_summary);
-			break;
-		}
-	}
-
-	return ret;
+	FTS_DEBUG("Exit %s", __func__);
 }
-
-/*0 IC close charger mode flag*/
-/*1 IC open charger mode flag*/
-int fts_5446_enable_charger_mode = 0;
-
+#endif
 
 /*****************************************************************************
 *  Name: fts_ts_probe
@@ -1320,12 +1351,15 @@ int fts_5446_enable_charger_mode = 0;
 *  Output:
 *  Return:
 *****************************************************************************/
+struct i2c_client *hw_client;
 static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int ret = 0;
 	struct fts_ts_platform_data *pdata;
 	struct fts_ts_data *ts_data;
+
 	FTS_FUNC_ENTER();
+
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		FTS_ERROR("I2C not supported");
 		return -ENODEV;
@@ -1359,6 +1393,7 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	ts_data->client = client;
 	ts_data->pdata = pdata;
 	i2c_set_clientdata(client, ts_data);
+	hw_client = client;
 
 	ts_data->ts_workqueue = create_singlethread_workqueue("fts_wq");
 	if (NULL == ts_data->ts_workqueue) {
@@ -1366,6 +1401,7 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	}
 
 	spin_lock_init(&ts_data->irq_lock);
+	mutex_init(&ts_data->report_mutex);
 	mutex_init(&ts_data->report_mutex);
 
 	ret = fts_input_init(ts_data);
@@ -1380,6 +1416,8 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 		FTS_ERROR("fail to get vdd/vcc_i2c regulator");
 		goto err_power_init;
 	}
+
+	ts_data->power_disabled = true;
 	ret = fts_power_source_ctrl(ts_data, ENABLE);
 	if (ret) {
 		FTS_ERROR("fail to enable vdd/vcc_i2c regulator");
@@ -1443,13 +1481,6 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	}
 #endif
 
-#if FTS_TEST_EN
-	ret = fts_test_init(client);
-	if (ret) {
-		FTS_ERROR("init production test fail");
-	}
-#endif
-
 #if FTS_ESDCHECK_EN
 	ret = fts_esdcheck_init(ts_data);
 	if (ret) {
@@ -1463,15 +1494,15 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 		goto err_irq_req;
 	}
 
-#if HQ_LOCK_DOWN_INFO
-	fts_create_lockdown_proc(client);
-#endif
-
 #if FTS_AUTO_UPGRADE_EN
 	ret = fts_fwupg_init(ts_data);
 	if (ret) {
 		FTS_ERROR("init fw upgrade fail");
 	}
+#endif
+
+#if FTS_RESUME_EN
+	fts_resume_init();
 #endif
 
 #if defined(CONFIG_FB)
@@ -1487,16 +1518,6 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	register_early_suspend(&ts_data->early_suspend);
 #endif
 
-	ret = fts_tp_data_dump_proc();
-	if (ret) {
-		FTS_ERROR("Unable to create tp_data_dump proc: %d", ret);
-	}
-	ret = fts_tp_selftest_proc();
-	if (ret) {
-		FTS_ERROR("Unable to create tp_selftest_proc proc: %d", ret);
-	}
-
-	fts_5446_enable_charger_mode = 1;
 	FTS_FUNC_EXIT();
 	return 0;
 
@@ -1558,12 +1579,12 @@ static int fts_ts_remove(struct i2c_client *client)
 	fts_fwupg_exit(ts_data);
 #endif
 
-#if FTS_TEST_EN
-	fts_test_exit(client);
-#endif
-
 #if FTS_ESDCHECK_EN
 	fts_esdcheck_exit(ts_data);
+#endif
+
+#if FTS_GESTURE_EN
+	fts_gesture_exit(client);
 #endif
 
 #if defined(CONFIG_FB)
@@ -1573,7 +1594,7 @@ static int fts_ts_remove(struct i2c_client *client)
 	unregister_early_suspend(&ts_data->early_suspend);
 #endif
 
-	free_irq(client->irq, ts_data);
+	free_irq(ts_data->irq, ts_data);
 	input_unregister_device(ts_data->input_dev);
 
 	if (gpio_is_valid(ts_data->pdata->reset_gpio))
@@ -1602,27 +1623,13 @@ static int fts_ts_remove(struct i2c_client *client)
 	return 0;
 }
 
-#if ((defined CONFIG_PM) && (defined CONFIG_ENABLE_PM_TP_SUSPEND_RESUME))
-static int fts_ts_pm_suspend(struct device *dev)
-{
-	FTS_FUNC_ENTER();
-	if (lcm_ffbm_mode) {
-		fts_ts_suspend(dev);
-	} 
-	FTS_FUNC_EXIT();
-	return 0;
-}
 
-static int fts_ts_pm_resume(struct device *dev)
-{
-	FTS_FUNC_ENTER();
-	if (lcm_ffbm_mode) {
-		fts_ts_resume(dev);
-	} 
-	FTS_FUNC_EXIT();
-	return 0;
-}
-#endif
+static const struct dev_pm_ops fts_ts_pm_ops = {
+	.suspend = fts_ts_suspend,
+	.resume = fts_ts_resume,
+};
+
+
 
 /*****************************************************************************
 *  Name: fts_ts_suspend
@@ -1660,19 +1667,25 @@ static int fts_ts_suspend(struct device *dev)
 
 	fts_irq_disable();
 
-#if 0    /*FTS_POWER_SOURCE_CUST_EN*/
-	ret = fts_power_source_ctrl(ts_data, DISABLE);
+#if FTS_POWER_SOURCE_CUST_EN
+	/*ret = fts_power_source_ctrl(ts_data, DISABLE);
 	if (ret < 0) {
 		FTS_ERROR("power off fail, ret=%d", ret);
-	}
-#if FTS_PINCTRL_EN
-	fts_pinctrl_select_suspend(ts_data);
-#endif
-#else
+	}*/
+
 	/* TP enter sleep mode */
 	ret = fts_i2c_write_reg(ts_data->client, FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP_VALUE);
 	if (ret < 0)
 		FTS_ERROR("set TP to sleep mode fail, ret=%d", ret);
+
+#if FTS_PINCTRL_EN
+	fts_pinctrl_select_suspend(ts_data);
+#endif
+
+	/* TP enter sleep mode */
+
+
+
 #endif
 
 	ts_data->suspended = true;
@@ -1700,7 +1713,7 @@ static int fts_ts_resume(struct device *dev)
 	fts_release_all_finger();
 
 #if FTS_POWER_SOURCE_CUST_EN
-	fts_power_source_ctrl(ts_data, ENABLE);
+
 #if FTS_PINCTRL_EN
 	fts_pinctrl_select_normal(ts_data);
 #endif
@@ -1716,8 +1729,6 @@ static int fts_ts_resume(struct device *dev)
 	fts_esdcheck_resume();
 #endif
 
-	fts_irq_enable();
-
 #if FTS_GESTURE_EN
 	if (fts_gesture_resume(ts_data->client) == 0) {
 		ts_data->suspended = false;
@@ -1726,28 +1737,11 @@ static int fts_ts_resume(struct device *dev)
 #endif
 
 	ts_data->suspended = false;
+	fts_irq_enable();
 
 	FTS_FUNC_EXIT();
 	return 0;
 }
-
-
-/**
- * ============================
- * @Author:   HQ-zmc
- * @Version:  1.0
- * @DateTime: 2018-01-15 11:28:54
- * @input:
- * @output:
- * ============================
- */
-#if ((defined CONFIG_PM) && (defined CONFIG_ENABLE_PM_TP_SUSPEND_RESUME))
-static const struct dev_pm_ops ft5446_dev_pm_ops = {
-	.suspend = fts_ts_pm_suspend,
-	.resume = fts_ts_pm_resume,
-};
-#endif
-
 
 /*****************************************************************************
 * I2C Driver
@@ -1759,7 +1753,7 @@ static const struct i2c_device_id fts_ts_id[] = {
 MODULE_DEVICE_TABLE(i2c, fts_ts_id);
 
 static struct of_device_id fts_match_table[] = {
-	{ .compatible = "focaltech,5446", },
+	{ .compatible = "focaltech,fts"},
 	{ },
 };
 
@@ -1770,9 +1764,10 @@ static struct i2c_driver fts_ts_driver = {
 		.name = FTS_DRIVER_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = fts_match_table,
-		#if ((defined CONFIG_PM) && (defined CONFIG_ENABLE_PM_TP_SUSPEND_RESUME))
-		.pm = &ft5446_dev_pm_ops,
-		#endif
+
+		.pm = &fts_ts_pm_ops,
+
+
 	},
 	.id_table = fts_ts_id,
 };

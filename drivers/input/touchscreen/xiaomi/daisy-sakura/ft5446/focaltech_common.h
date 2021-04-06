@@ -2,7 +2,8 @@
  *
  * FocalTech fts TouchScreen driver.
  *
- * Copyright (c) 2010-2017, Focaltech Ltd. All rights reserved.
+ * Copyright (c) 2012-2018, Focaltech Ltd. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,7 +37,7 @@
 /*****************************************************************************
 * Macro definitions using #define
 *****************************************************************************/
-#define FTS_DRIVER_VERSION                  "Focaltech V2.0 20170919"
+#define FTS_DRIVER_VERSION                  "Focaltech V2.2 20180321"
 
 #define BYTE_OFF_0(x)           (u8)((x) & 0xFF)
 #define BYTE_OFF_8(x)           (u8)((x >> 8) & 0xFF)
@@ -54,7 +55,7 @@
 #define FTS_CHIP_IDC            ((FTS_CHIP_TYPE & FLAGBIT(FLAG_IDC_BIT)) == FLAGBIT(FLAG_IDC_BIT))
 #define FTS_HID_SUPPORTTED      ((FTS_CHIP_TYPE & FLAGBIT(FLAG_HID_BIT)) == FLAGBIT(FLAG_HID_BIT))
 
-#define FTS_CHIP_TYPE_MAPPING {{0x02, 0x54, 0x22, 0x54, 0x22, 0x00, 0x00, 0x54, 0x2C } }
+#define FTS_CHIP_TYPE_MAPPING { {0x02, 0x54, 0x22, 0x54, 0x22, 0x00, 0x00, 0x54, 0x2C} }
 
 #define I2C_BUFFER_LENGTH_MAXINUM           256
 #define FILE_NAME_LENGTH                    128
@@ -64,7 +65,10 @@
 #define INVALID                             0
 #define FTS_CMD_START1                      0x55
 #define FTS_CMD_START2                      0xAA
+#define FTS_CMD_START_DELAY                 10
 #define FTS_CMD_READ_ID                     0x90
+#define FTS_CMD_READ_ID_LEN                 4
+#define FTS_CMD_READ_ID_LEN_INCELL          1
 /*register address*/
 #define FTS_REG_INT_CNT                     0x8F
 #define FTS_REG_FLOW_WORK_CNT               0x91
@@ -96,7 +100,7 @@
 #define FTS_SYSFS_ECHO_OFF(buf)     (buf[0] == '0')
 
 #define kfree_safe(pbuf) do {\
-    if (pbuf) {\
+	if (pbuf) {\
 		kfree(pbuf);\
 		pbuf = NULL;\
 	} \
@@ -115,21 +119,21 @@
 * Global variable or extern global variabls/functions
 *****************************************************************************/
 struct ft_chip_t {
-    u64 type;
-    u8 chip_idh;
-    u8 chip_idl;
-    u8 rom_idh;
-    u8 rom_idl;
-    u8 pb_idh;
-    u8 pb_idl;
-    u8 bl_idh;
-    u8 bl_idl;
+	u64 type;
+	u8 chip_idh;
+	u8 chip_idl;
+	u8 rom_idh;
+	u8 rom_idl;
+	u8 pb_idh;
+	u8 pb_idl;
+	u8 bl_idh;
+	u8 bl_idl;
 };
 
 struct ts_ic_info {
-    bool is_incell;
-    bool hid_supported;
-    struct ft_chip_t ids;
+	bool is_incell;
+	bool hid_supported;
+	struct ft_chip_t ids;
 };
 
 /*****************************************************************************
