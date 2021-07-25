@@ -43,7 +43,6 @@
 
 /*Add by HQ-102007757 for sending tp hw info*/
 #include "focaltech_flash.h"
-#include <linux/hqsysfs.h>
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
