@@ -303,8 +303,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89
-HOSTCXXFLAGS = -O2
+HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -march=native -mtune=native -fomit-frame-pointer -std=gnu89
+HOSTCXXFLAGS = -O3 -march=native -mtune=native
 
 ifeq ($(shell $(HOSTCC) -v 2>&1 | grep -c "clang version"), 1)
 HOSTCFLAGS  += -Wno-unused-value -Wno-unused-parameter \
@@ -397,12 +397,13 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -std=gnu89
-KBUILD_CPPFLAGS := -D__KERNEL__
+		   -std=gnu89 -ffast-math -O3
+
+KBUILD_CPPFLAGS := -D__KERNEL__ -O3
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS_MODULE  := -DMODULE
-KBUILD_CFLAGS_MODULE  := -DMODULE
+KBUILD_CFLAGS_MODULE  := -DMODULE -O3
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 KBUILD_LDFLAGS :=
 GCC_PLUGINS_CFLAGS :=
@@ -707,6 +708,12 @@ LLVM_NM	:= llvm-nm
 export LLVM_AR LLVM_NM
 endif
 
+KBUILD_CFLAGS += --param=max-inline-insns-auto=30 \
+		 --param=inline-min-speedup=15 \
+		 --param=max-inline-insns-single=200 \
+		 --param=early-inlining-insns=14
+
+
 # The arch Makefile can set ARCH_{CPP,A,C}FLAGS to override the default
 # values of the respective KBUILD_* variables
 ARCH_CPPFLAGS :=
@@ -811,6 +818,9 @@ DISABLE_LTO	+= $(DISABLE_CFI)
 export CFI_CFLAGS DISABLE_CFI
 endif
 
+KBUILD_CFLAGS   += -march=armv8-a+crc+crypto -mtune=cortex-a53
+KBUILD_AFLAGS   += -march=armv8-a+crc+crypto -mtune=cortex-a53
+
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS   += -Os
 else
@@ -876,6 +886,8 @@ KBUILD_CFLAGS += $(call cc-disable-warning, tautological-compare)
 # See modpost pattern 2
 KBUILD_CFLAGS += $(call cc-option, -mno-global-merge,)
 KBUILD_CFLAGS += $(call cc-option, -fcatch-undefined-behavior)
+KBUILD_CFLAGS += $(call cc-option, -no-integrated-as)
+KBUILD_AFLAGS += $(call cc-option, -no-integrated-as)
 endif
 
 # These warnings generated too much noise in a regular build.
